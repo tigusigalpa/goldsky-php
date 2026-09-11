@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   analyze:
-    name: Analyze PHP
+    name: Analyze GitHub Actions
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -27,10 +27,12 @@ jobs:
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
-          languages: php
+          # CodeQL does not support PHP. Keep it useful by scanning the
+          # repository's GitHub Actions workflows; PHP is scanned by Semgrep.
+          languages: actions
           queries: security-extended
 
       - name: Analyze
         uses: github/codeql-action/analyze@v4
         with:
-          category: /language:php
+          category: /language:actions

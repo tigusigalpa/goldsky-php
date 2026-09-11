@@ -16,7 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Explicit input validation for subgraphs, webhooks, Edge endpoints, GraphQL
   targets, JSON-RPC requests, and multipart bundle filenames.
 - GitHub Actions workflows for the PHP-version test matrix, coverage reporting
-  to Codecov, CodeQL, and pull-request dependency review.
+  to Codecov, CodeQL analysis of GitHub Actions, Semgrep PHP security scanning,
+  and pull-request dependency review.
 
 ### Fixed
 
