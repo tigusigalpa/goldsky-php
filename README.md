@@ -5,7 +5,6 @@
 [![Tests](https://github.com/tigusigalpa/goldsky-php/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tigusigalpa/goldsky-php/actions/workflows/ci.yml)
 [![Coverage](https://github.com/tigusigalpa/goldsky-php/actions/workflows/coverage.yml/badge.svg?branch=main)](https://github.com/tigusigalpa/goldsky-php/actions/workflows/coverage.yml)
 [![CodeQL](https://github.com/tigusigalpa/goldsky-php/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/tigusigalpa/goldsky-php/actions/workflows/codeql.yml)
-[![Semgrep](https://github.com/tigusigalpa/goldsky-php/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/tigusigalpa/goldsky-php/actions/workflows/security.yml)
 [![Codecov](https://codecov.io/gh/tigusigalpa/goldsky-php/graph/badge.svg)](https://codecov.io/gh/tigusigalpa/goldsky-php)
 [![Latest Release](https://img.shields.io/github/v/release/tigusigalpa/goldsky-php?display_name=tag)](https://github.com/tigusigalpa/goldsky-php/releases)
 [![PHP](https://img.shields.io/badge/PHP-%E2%89%A58.1-777BB4)](https://www.php.net/)
