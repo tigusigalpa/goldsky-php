@@ -1,0 +1,36 @@
+name: Semgrep
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  schedule:
+    - cron: '41 3 * * 4'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  semgrep:
+    name: PHP security scan
+    runs-on: ubuntu-latest
+    # Dependabot pull requests use a read-only token and cannot upload SARIF.
+    if: github.actor != 'dependabot[bot]'
+    container:
+      image: semgrep/semgrep
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Scan PHP code
+        run: semgrep scan --config auto --sarif --output semgrep.sarif src tests examples
+
+      - name: Upload results to GitHub code scanning
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
