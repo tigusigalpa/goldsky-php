@@ -38,7 +38,16 @@ class ProblemDetails extends GoldskyException
 
     private function buildMessage(): string
     {
-        $status = $this->status !== 0 ? $this->status : 200;
+        if ($this->status === 0) {
+            if ($this->detail !== '') {
+                return "goldsky API error ({$this->type}): {$this->detail}";
+            }
+            if ($this->title !== '') {
+                return "goldsky API error ({$this->type}): {$this->title}";
+            }
+            return "goldsky API error ({$this->type})";
+        }
+        $status = $this->status;
         if ($this->detail !== '') {
             return "goldsky API error {$status} ({$this->type}): {$this->detail}";
         }

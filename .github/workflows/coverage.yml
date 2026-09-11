@@ -1,0 +1,42 @@
+name: Coverage
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  coverage:
+    name: PHPUnit coverage
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: xdebug
+          tools: composer:v2
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Generate Clover report
+        run: |
+          mkdir -p build/logs
+          vendor/bin/phpunit --coverage-clover build/logs/clover.xml --coverage-text
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: build/logs/clover.xml
+          flags: unittests
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}

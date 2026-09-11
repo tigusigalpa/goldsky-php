@@ -6,8 +6,6 @@ namespace Tigusigalpa\Goldsky;
 
 use GuzzleHttp\Client as GuzzleClient;
 use GuzzleHttp\Exception\GuzzleException;
-use GuzzleHttp\Exception\RequestException;
-use GuzzleHttp\HandlerStack;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -35,6 +33,7 @@ final class Requester
 
     public function __construct(string $apiToken, Config $config, ?GuzzleClient $httpClient = null, ?LoggerInterface $logger = null, ?callable $sleeper = null)
     {
+        $this->validateConfig($config);
         $this->apiToken = $apiToken;
         $this->config = $config;
         $this->logger = $logger ?? new NullLogger();
@@ -60,6 +59,11 @@ final class Requester
         return $this->apiToken;
     }
 
+    public function hasApiToken(): bool
+    {
+        return $this->apiToken !== '';
+    }
+
     public function setSleeper(callable $sleeper): void
     {
         $this->sleeper = $sleeper;
@@ -81,6 +85,9 @@ final class Requester
      */
     public function request(string $method, array $segments, array $query = [], $json = null, array $multipart = [], array $headers = []): array
     {
+        if (!$this->hasApiToken()) {
+            throw new TransportException($method, 0, 'REST project API token is required');
+        }
         $method = strtoupper($method);
         $url = $this->buildURL($segments, $query);
         $safe = self::isSafeMethod($method);
@@ -103,7 +110,16 @@ final class Requester
             }
 
             $status = $response->getStatusCode();
-            $body = (string) $response->getBody();
+            try {
+                $body = $this->readResponseBody($response);
+            } catch (TransportException $e) {
+                $lastError = $e;
+                if (($safe || $retryMutations) && empty($multipart) && $attempt < $attempts) {
+                    $this->sleep($this->backoffMs($attempt));
+                    continue;
+                }
+                throw $e;
+            }
 
             if ($status >= 200 && $status < 300) {
                 return [$status, $body];
@@ -113,7 +129,7 @@ final class Requester
             $lastError = $problem;
 
             $retryable = self::isRetryableStatus($status);
-            $canRetry = ($safe || $retryMutations) && $attempt < $attempts && $retryable;
+            $canRetry = ($safe || $retryMutations) && empty($multipart) && $attempt < $attempts && $retryable;
             if (!$canRetry) {
                 throw $problem;
             }
@@ -130,21 +146,29 @@ final class Requester
     {
         $defaults = [
             'http_errors' => false,
+            'allow_redirects' => false,
+            'timeout' => $this->config->timeoutSec,
+            'verify' => $this->config->verifyTls,
             'headers' => [
                 'Accept' => 'application/json',
                 'User-Agent' => $this->config->userAgent,
             ],
         ];
         if ($auth) {
+            if (!$this->hasApiToken()) {
+                throw new TransportException(strtoupper($method), 0, 'REST project API token is required');
+            }
             $defaults['headers']['Authorization'] = 'Bearer ' . $this->apiToken;
         }
-        $options = array_merge_recursive($defaults, $options);
+        $headers = array_replace($defaults['headers'], $options['headers'] ?? []);
+        $options = array_replace($defaults, $options);
+        $options['headers'] = $headers;
         try {
             $response = $this->httpClient->request($method, $url, $options);
         } catch (GuzzleException $e) {
             throw new TransportException($method, 0, $e->getMessage(), $e);
         }
-        return [$response->getStatusCode(), (string) $response->getBody()];
+        return [$response->getStatusCode(), $this->readResponseBody($response)];
     }
 
     private function buildURL(array $segments, array $query): string
@@ -163,20 +187,79 @@ final class Requester
      */
     private function buildOptions(array $query, $json, array $multipart, array $headers): array
     {
-        $options = [];
-        if (!empty($query)) {
-            $options['query'] = $query;
-        }
+        $options = [
+            'http_errors' => false,
+            'allow_redirects' => false,
+            'timeout' => $this->config->timeoutSec,
+            'verify' => $this->config->verifyTls,
+        ];
         if (!empty($multipart)) {
             $options['multipart'] = $multipart;
         } elseif ($json !== null) {
             $options['json'] = $json;
         }
         $options['headers'] = array_merge(
-            ['Authorization' => 'Bearer ' . $this->apiToken],
+            [
+                'Accept' => 'application/json, application/problem+json',
+                'User-Agent' => $this->config->userAgent,
+                'Authorization' => 'Bearer ' . $this->apiToken,
+            ],
             $headers,
         );
         return $options;
+    }
+
+    private function readResponseBody(ResponseInterface $response): string
+    {
+        $stream = $response->getBody();
+        $body = '';
+        $limit = $this->config->maxResponseBodyBytes;
+
+        try {
+            while (!$stream->eof()) {
+                $body .= $stream->read(8192);
+                if (strlen($body) > $limit) {
+                    throw new TransportException('response', $response->getStatusCode(), "response body exceeds {$limit}-byte limit");
+                }
+            }
+        } catch (\Throwable $e) {
+            if ($e instanceof TransportException) {
+                throw $e;
+            }
+            throw new TransportException('response', $response->getStatusCode(), $e->getMessage(), $e);
+        }
+
+        return $body;
+    }
+
+    private function validateConfig(Config $config): void
+    {
+        foreach ([
+            'REST base URL' => $config->baseURL,
+            'Edge base URL' => $config->edgeBaseURL,
+            'GraphQL base URL' => $config->graphQLBaseURL,
+        ] as $label => $url) {
+            $parts = parse_url($url);
+            if (!is_array($parts)
+                || !in_array($parts['scheme'] ?? '', ['http', 'https'], true)
+                || empty($parts['host'])
+                || isset($parts['query'])
+                || isset($parts['fragment'])) {
+                throw new TransportException('config', 0, "invalid {$label}");
+            }
+        }
+        if ($config->timeoutSec < 0) {
+            throw new TransportException('config', 0, 'timeout must not be negative');
+        }
+        if ($config->retryMaxAttempts < 1) {
+            throw new TransportException('config', 0, 'retry max attempts must be at least 1');
+        }
+        if ($config->retryInitialBackoffMs < 0 || $config->retryMaxBackoffMs < 0) {
+            throw new TransportException('config', 0, 'retry backoff values must not be negative');
+        }
+        if ($config->maxResponseBodyBytes < 1) {
+            throw new TransportException('config', 0, 'max response body bytes must be positive');
+        }
     }
 
     private function parseProblem(ResponseInterface $response, string $body): ProblemDetails
@@ -222,7 +305,7 @@ final class Requester
     {
         $initial = $this->config->retryInitialBackoffMs;
         $max = $this->config->retryMaxBackoffMs;
-        $d = $initial;
+        $d = min($initial, $max);
         for ($i = 1; $i < $attempt; $i++) {
             $d *= 2;
             if ($d > $max) {

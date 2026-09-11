@@ -43,6 +43,7 @@ final class Subgraphs extends BaseAPI
      */
     public function newPager(array $opts = []): Pager
     {
+        $this->validatePageSize($opts['page_size'] ?? 0);
         return new Pager(
             fn (array $q) => $this->list(array_merge($opts, $q)),
             $opts['page_size'] ?? 0,
@@ -57,6 +58,7 @@ final class Subgraphs extends BaseAPI
      */
     public function get(string $name): Page
     {
+        $this->validateSubgraphTarget($name);
         [, $body] = $this->requester->request('GET', ['subgraphs', $name]);
         return Page::fromJSON($body);
     }
@@ -81,6 +83,7 @@ final class Subgraphs extends BaseAPI
      */
     public function getVersion(string $name, string $version): Page
     {
+        $this->validateSubgraphTarget($name, $version);
         [, $body] = $this->requester->request('GET', ['subgraphs', $name, $version]);
         return Page::fromJSON($body);
     }
@@ -96,6 +99,7 @@ final class Subgraphs extends BaseAPI
      */
     public function updateVersion(string $name, string $version, array $req): array
     {
+        $this->validateSubgraphTarget($name, $version);
         [, $body] = $this->requester->request('PATCH', ['subgraphs', $name, $version], [], $req);
         $decoded = $this->decode($body);
         return $decoded['data'] ?? $decoded;
@@ -112,6 +116,7 @@ final class Subgraphs extends BaseAPI
      */
     public function logs(string $name, string $version, array $opts = []): array
     {
+        $this->validateSubgraphTarget($name, $version);
         $query = [];
         if (isset($opts['cursor'])) {
             $query['cursor'] = $opts['cursor'];
@@ -143,6 +148,7 @@ final class Subgraphs extends BaseAPI
      */
     public function pause(string $name, string $version): void
     {
+        $this->validateSubgraphTarget($name, $version);
         $this->requester->request('PUT', ['subgraphs', $name, $version, 'pause']);
     }
 
@@ -153,6 +159,7 @@ final class Subgraphs extends BaseAPI
      */
     public function resume(string $name, string $version): void
     {
+        $this->validateSubgraphTarget($name, $version);
         $this->requester->request('PUT', ['subgraphs', $name, $version, 'resume']);
     }
 
@@ -167,6 +174,10 @@ final class Subgraphs extends BaseAPI
      */
     public function setTag(string $name, string $version, array $req): array
     {
+        $this->validateSubgraphTarget($name, $version);
+        if (!isset($req['target_version']) || !is_string($req['target_version']) || !preg_match('/^[a-zA-Z0-9][\\w+.-]*$/', $req['target_version'])) {
+            throw new GoldskyException('invalid target subgraph version');
+        }
         [, $body] = $this->requester->request('PUT', ['subgraphs', $name, 'tags', $version], [], $req);
         $decoded = $this->decode($body);
         return $decoded['data'] ?? $decoded;
@@ -179,6 +190,7 @@ final class Subgraphs extends BaseAPI
      */
     public function deleteTag(string $name, string $version): void
     {
+        $this->validateSubgraphTarget($name, $version);
         $this->requester->request('DELETE', ['subgraphs', $name, 'tags', $version]);
     }
 
@@ -190,6 +202,7 @@ final class Subgraphs extends BaseAPI
      */
     public function deleteDeployment(string $name, string $version): void
     {
+        $this->validateSubgraphTarget($name, $version);
         $this->requester->request('DELETE', ['subgraphs', $name, 'deployments', $version]);
     }
 
@@ -208,6 +221,7 @@ final class Subgraphs extends BaseAPI
      */
     public function deploy(string $name, string $version, array $opts): array
     {
+        $this->validateSubgraphTarget($name, $version);
         if (empty($opts['bundle'])) {
             throw new GoldskyException('goldsky: Deploy requires a bundle');
         }
@@ -216,6 +230,9 @@ final class Subgraphs extends BaseAPI
         }
         if (($opts['overwrite'] ?? '') === '1') {
             throw new GoldskyException('goldsky: overwrite=1 is rejected by the server; delete the version and redeploy, or move a tag');
+        }
+        if (str_contains((string) $opts['bundle_filename'], "\r") || str_contains((string) $opts['bundle_filename'], "\n")) {
+            throw new GoldskyException('goldsky: bundle_filename must not contain CR or LF');
         }
 
         $multipart = [];
@@ -245,6 +262,7 @@ final class Subgraphs extends BaseAPI
      */
     public function webhookEntities(string $name, string $version): array
     {
+        $this->validateSubgraphTarget($name, $version);
         [, $body] = $this->requester->request('GET', ['subgraphs', $name, $version, 'entities']);
         return $this->decode($body);
     }

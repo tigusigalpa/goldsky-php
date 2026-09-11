@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `Client::forData()` for public GraphQL and Edge RPC use without a REST
+  project token.
+- Configurable 16 MiB response-body limit across REST, GraphQL, and JSON-RPC
+  clients.
+- Explicit input validation for subgraphs, webhooks, Edge endpoints, GraphQL
+  targets, JSON-RPC requests, and multipart bundle filenames.
+- GitHub Actions workflows for the PHP-version test matrix, coverage reporting
+  to Codecov, CodeQL, and pull-request dependency review.
+
+### Fixed
+
+- Edge RPC now uses Goldsky's documented `X-ERPC-Secret-Token` header instead
+  of leaking the Edge key through a URL query parameter.
+- Empty, malformed, and oversized successful JSON responses now fail loudly as
+  `TransportException`s instead of silently becoming empty data.
+- JSON-RPC rejects malformed envelopes, mismatched single-call IDs, and
+  duplicate or unknown batch IDs.
+- Pagers stop after terminal pages and reject pagination tokens that do not
+  advance.
+- Pipeline state responses preserve both wrapped and raw valid JSON values.
+- Streaming multipart deployments are not retried, even when mutation retries
+  are enabled.
+
+## [1.0.0] - 2026-09-11
+
+### Added
+
 - Initial release of `goldsky-php`.
 - Full coverage of the Goldsky REST API v1.2.0 (40 operations, OpenAPI 3.1.0).
 - REST services: `Pipelines`, `Subgraphs`, `Webhooks`, `Edge`, `Catalogs`.

@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Tigusigalpa\Goldsky\GraphQL;
 
-use GuzzleHttp\Exception\GuzzleException;
-use Psr\Http\Message\ResponseInterface;
 use Tigusigalpa\Goldsky\Exceptions\ProblemDetails;
 use Tigusigalpa\Goldsky\Exceptions\TransportException;
 use Tigusigalpa\Goldsky\Requester;
@@ -25,23 +23,26 @@ final class GraphQLClient
     public function __construct(
         private readonly Requester $requester,
         private string $baseURL,
-        private string $edgeAPIKey,
+        ?string $unusedEdgeAPIKey = null,
     ) {
     }
 
     public function publicURL(string $projectID, string $subgraphName, string $versionOrTag): string
     {
-        return "{$this->baseURL}/public/{$projectID}/subgraphs/{$subgraphName}/{$versionOrTag}/gn";
+        return $this->endpointURL('public', $projectID, $subgraphName, $versionOrTag);
     }
 
     public function privateURL(string $projectID, string $subgraphName, string $versionOrTag): string
     {
-        return "{$this->baseURL}/private/{$projectID}/subgraphs/{$subgraphName}/{$versionOrTag}/gn";
+        return $this->endpointURL('private', $projectID, $subgraphName, $versionOrTag);
     }
 
+    /**
+     * @deprecated Private GraphQL calls authenticate with the REST project
+     * API token. Edge endpoint API keys do not apply to GraphQL.
+     */
     public function setEdgeAPIKey(string $key): void
     {
-        $this->edgeAPIKey = $key;
     }
 
     /**
@@ -54,6 +55,12 @@ final class GraphQLClient
      */
     public function query(string $endpoint, array $req, bool $auth = false): array
     {
+        if (!isset($req['query']) || !is_string($req['query']) || trim($req['query']) === '') {
+            throw new TransportException('graphql', 0, 'query is required');
+        }
+        if ($auth && !$this->requester->hasApiToken()) {
+            throw new TransportException('graphql', 0, 'REST project API token is required');
+        }
         $options = [
             'http_errors' => false,
             'headers' => [
@@ -67,20 +74,8 @@ final class GraphQLClient
             $options['headers']['Authorization'] = 'Bearer ' . $this->requester->getApiToken();
         }
 
-        try {
-            $response = $this->requester->rawRequest('POST', $endpoint, $options, false);
-        } catch (GuzzleException $e) {
-            throw new TransportException('graphql', 0, $e->getMessage(), $e);
-        }
-
-        [$status, $body] = $response;
+        [$status, $body] = $this->requester->rawRequest('POST', $endpoint, $options, false);
         $out = ['status' => $status];
-        if ($body !== '') {
-            $decoded = json_decode($body, true);
-            if (is_array($decoded)) {
-                $out = array_merge($out, $decoded);
-            }
-        }
         if ($status < 200 || $status >= 300) {
             throw new ProblemDetails(
                 type: 'about:blank',
@@ -89,6 +84,20 @@ final class GraphQLClient
                 rawBody: $body,
             );
         }
+
+        try {
+            $trimmed = trim($body);
+            if ($trimmed === '' || $trimmed[0] !== '{') {
+                throw new \JsonException('expected a JSON object');
+            }
+            $decoded = json_decode($trimmed, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            throw new TransportException('graphql', $status, 'decode GraphQL response: ' . $e->getMessage(), $e);
+        }
+        if (!is_array($decoded)) {
+            throw new TransportException('graphql', $status, 'decode GraphQL response: expected a JSON object');
+        }
+        $out = array_merge($out, $decoded);
         return $out;
     }
 
@@ -101,6 +110,7 @@ final class GraphQLClient
      */
     public function queryPublic(string $projectID, string $subgraphName, string $versionOrTag, array $req): array
     {
+        $this->validateTarget($projectID, $subgraphName, $versionOrTag);
         return $this->query($this->publicURL($projectID, $subgraphName, $versionOrTag), $req, false);
     }
 
@@ -113,11 +123,32 @@ final class GraphQLClient
      */
     public function queryPrivate(string $projectID, string $subgraphName, string $versionOrTag, array $req): array
     {
+        $this->validateTarget($projectID, $subgraphName, $versionOrTag);
         return $this->query($this->privateURL($projectID, $subgraphName, $versionOrTag), $req, true);
     }
 
     public function hasErrors(array $response): bool
     {
         return !empty($response['errors']);
+    }
+
+    private function endpointURL(string $scope, string $projectID, string $subgraphName, string $versionOrTag): string
+    {
+        return rtrim($this->baseURL, '/') . '/' . $scope . '/'
+            . rawurlencode($projectID) . '/subgraphs/'
+            . rawurlencode($subgraphName) . '/' . rawurlencode($versionOrTag) . '/gn';
+    }
+
+    private function validateTarget(string $projectID, string $subgraphName, string $versionOrTag): void
+    {
+        foreach ([
+            'project ID' => $projectID,
+            'subgraph name' => $subgraphName,
+            'version or tag' => $versionOrTag,
+        ] as $label => $value) {
+            if (trim($value) === '') {
+                throw new TransportException('graphql', 0, "{$label} is required");
+            }
+        }
     }
 }

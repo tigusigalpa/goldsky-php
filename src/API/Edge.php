@@ -45,6 +45,7 @@ final class Edge extends BaseAPI
      */
     public function newPager(array $opts = []): Pager
     {
+        $this->validatePageSize($opts['page_size'] ?? 0);
         $extra = [];
         if (!empty($opts['product'])) {
             $extra['product'] = $opts['product'];
@@ -68,6 +69,10 @@ final class Edge extends BaseAPI
      */
     public function create(array $req): array
     {
+        $this->validateResourceName('Edge endpoint', (string) ($req['name'] ?? ''));
+        if (isset($req['product']) && !in_array($req['product'], ['rpc', 'data'], true)) {
+            throw new \Tigusigalpa\Goldsky\Exceptions\GoldskyException('goldsky: Edge endpoint product must be "rpc" or "data"');
+        }
         [, $body] = $this->requester->request('POST', ['edge'], [], $req);
         return $this->decode($body);
     }
@@ -81,6 +86,7 @@ final class Edge extends BaseAPI
      */
     public function get(string $name): array
     {
+        $this->validateResourceName('Edge endpoint', $name);
         [, $body] = $this->requester->request('GET', ['edge', $name]);
         $decoded = $this->decode($body);
         return $decoded['data'] ?? $decoded;
@@ -90,7 +96,7 @@ final class Edge extends BaseAPI
      * Updates an Edge endpoint. Domain changes are applied before rate-limit
      * changes and the update is not transactional.
      *
-     * @param array{rate_limit_budget?: string, allowed_domains?: array<int, string>} $req
+     * @param array{rate_limit_budget?: ?string, allowed_domains?: array<int, string>} $req
      *
      * @return array<string, mixed>
      *
@@ -98,6 +104,13 @@ final class Edge extends BaseAPI
      */
     public function update(string $name, array $req): array
     {
+        $this->validateResourceName('Edge endpoint', $name);
+        if ($req === []) {
+            throw new \Tigusigalpa\Goldsky\Exceptions\GoldskyException('goldsky: Edge endpoint update requires at least one change');
+        }
+        if (array_key_exists('allowed_domains', $req) && !is_array($req['allowed_domains'])) {
+            throw new \Tigusigalpa\Goldsky\Exceptions\GoldskyException('goldsky: allowed_domains must be an array');
+        }
         [, $body] = $this->requester->request('PATCH', ['edge', $name], [], $req);
         $decoded = $this->decode($body);
         return $decoded['data'] ?? $decoded;
@@ -110,6 +123,7 @@ final class Edge extends BaseAPI
      */
     public function delete(string $name): void
     {
+        $this->validateResourceName('Edge endpoint', $name);
         $this->requester->request('DELETE', ['edge', $name]);
     }
 
@@ -122,6 +136,7 @@ final class Edge extends BaseAPI
      */
     public function pause(string $name): array
     {
+        $this->validateResourceName('Edge endpoint', $name);
         [, $body] = $this->requester->request('PUT', ['edge', $name, 'pause']);
         $decoded = $this->decode($body);
         return $decoded['data'] ?? $decoded;
@@ -136,6 +151,7 @@ final class Edge extends BaseAPI
      */
     public function resume(string $name): array
     {
+        $this->validateResourceName('Edge endpoint', $name);
         [, $body] = $this->requester->request('PUT', ['edge', $name, 'resume']);
         $decoded = $this->decode($body);
         return $decoded['data'] ?? $decoded;
@@ -151,6 +167,7 @@ final class Edge extends BaseAPI
      */
     public function revealKey(string $name): array
     {
+        $this->validateResourceName('Edge endpoint', $name);
         [, $body] = $this->requester->request('GET', ['edge', $name, 'api-key']);
         return $this->decode($body);
     }
@@ -166,6 +183,14 @@ final class Edge extends BaseAPI
      */
     public function metrics(string $name, array $opts = []): array
     {
+        $this->validateResourceName('Edge endpoint', $name);
+        if (!empty($opts['from']) && !empty($opts['to'])) {
+            $from = strtotime((string) $opts['from']);
+            $to = strtotime((string) $opts['to']);
+            if ($from !== false && $to !== false && $from > $to) {
+                throw new \Tigusigalpa\Goldsky\Exceptions\GoldskyException('goldsky: metrics from must not be after to');
+            }
+        }
         $query = [];
         if (!empty($opts['from'])) {
             $query['from'] = $opts['from'];

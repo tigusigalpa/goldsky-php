@@ -30,7 +30,8 @@ final class GoldskyServiceProvider extends ServiceProvider
                 ->withRetryMaxAttempts((int) config('goldsky.retry_max_attempts', 3))
                 ->withRetryMutations((bool) config('goldsky.retry_mutations', false))
                 ->withTimeout((float) config('goldsky.timeout', 60.0))
-                ->withVerifyTls((bool) config('goldsky.verify_tls', true));
+                ->withVerifyTls((bool) config('goldsky.verify_tls', true))
+                ->withMaxResponseBodyBytes((int) config('goldsky.max_response_body_bytes', Config::DEFAULT_MAX_RESPONSE_BODY_BYTES));
 
             return new Client(
                 apiToken: (string) config('goldsky.api_key', ''),

@@ -18,8 +18,8 @@ return [
     // REST project API token (Bearer). Required. Scoped to one project.
     'api_key' => env('GOLDSKY_API_KEY', ''),
 
-    // Edge endpoint API key. Separate secret from api_key. Carried in the Edge
-    // RPC query string. Obtain from Edge::create() or Edge::revealKey().
+    // Edge endpoint API key. Separate secret from api_key. Sent in the
+    // X-ERPC-Secret-Token header. Obtain from Edge::create() or Edge::revealKey().
     'edge_api_key' => env('GOLDSKY_EDGE_API_KEY', ''),
 
     // REST control-plane base URL.
@@ -45,4 +45,7 @@ return [
 
     // TLS verification. Disable only for local testing.
     'verify_tls' => filter_var(env('GOLDSKY_VERIFY_TLS', true), FILTER_VALIDATE_BOOL),
+
+    // Largest REST, GraphQL, or Edge RPC response buffered in memory (16 MiB).
+    'max_response_body_bytes' => (int) env('GOLDSKY_MAX_RESPONSE_BODY_BYTES', Config::DEFAULT_MAX_RESPONSE_BODY_BYTES),
 ];

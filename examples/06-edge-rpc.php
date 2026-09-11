@@ -13,7 +13,6 @@ require __DIR__ . '/../vendor/autoload.php';
 use Tigusigalpa\Goldsky\Client;
 use Tigusigalpa\Goldsky\Config;
 
-$token = getenv('GOLDSKY_API_KEY') ?: 'unused';
 $edgeKey = getenv('GOLDSKY_EDGE_API_KEY') ?: '';
 if ($edgeKey === '') {
     fwrite(STDERR, "Set GOLDSKY_EDGE_API_KEY to run this example.\n");
@@ -21,7 +20,7 @@ if ($edgeKey === '') {
 }
 
 $config = (new Config())->withEdgeAPIKey($edgeKey);
-$client = new Client($token, $config);
+$client = Client::forData($config);
 
 // Single call: eth_blockNumber on Ethereum mainnet (chain ID 1)
 $blockNumber = null;

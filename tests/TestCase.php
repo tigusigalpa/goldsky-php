@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tigusigalpa\Goldsky\Tests;
 
+use GuzzleHttp\Psr7\Response;
 use PHPUnit\Framework\TestCase as BaseTestCase;
 
 abstract class TestCase extends BaseTestCase
@@ -12,7 +13,7 @@ abstract class TestCase extends BaseTestCase
      * Builds a Guzzle mock handler and a Client wired to it.
      *
      * @param array<int, array{0: int, 1: string, 2?: array<string, string>}> $responses Each entry is [status, body, headers?].
-     * @param array{edge_api_key?: string, retry_max_attempts?: int, retry_mutations?: bool} $config
+     * @param array{edge_api_key?: string, retry_max_attempts?: int, retry_mutations?: bool, max_response_body_bytes?: int} $config
      * @return array{0: \Tigusigalpa\Goldsky\Client, 1: \GuzzleHttp\Handler\MockHandler, 2: \ArrayObject<int, array<string, mixed>>}
      */
     protected function mockClient(array $responses, array $config = []): array
@@ -36,6 +37,9 @@ abstract class TestCase extends BaseTestCase
         if (!empty($config['retry_mutations'])) {
             $cfg->withRetryMutations(true);
         }
+        if (isset($config['max_response_body_bytes'])) {
+            $cfg->withMaxResponseBodyBytes($config['max_response_body_bytes']);
+        }
 
         $sleeper = static fn (int $ms) => null;
         $client = new \Tigusigalpa\Goldsky\Client('test-token', $cfg, $httpClient, null, $sleeper);
@@ -50,7 +54,11 @@ abstract class TestCase extends BaseTestCase
     protected function lastRequest(\ArrayObject $container): array
     {
         $this->assertNotEmpty($container, 'no requests were recorded');
-        $req = $container[count($container) - 1]['request'];
+        $transactions = $container->getArrayCopy();
+        $req = $transactions[array_key_last($transactions)]['request'];
+        if (!$req instanceof \Psr\Http\Message\RequestInterface) {
+            throw new \UnexpectedValueException('Recorded transaction does not contain a PSR-7 request');
+        }
         $uri = $req->getUri();
         $path = $uri->getPath();
         // Strip the base URL path prefix (e.g. /api/v1) for cleaner assertions.
@@ -98,6 +106,9 @@ abstract class TestCase extends BaseTestCase
         $cfg->withRetryMaxAttempts($config['retry_max_attempts'] ?? 1);
         if (!empty($config['retry_mutations'])) {
             $cfg->withRetryMutations(true);
+        }
+        if (isset($config['max_response_body_bytes'])) {
+            $cfg->withMaxResponseBodyBytes($config['max_response_body_bytes']);
         }
 
         $sleeper = static fn (int $ms) => null;

@@ -42,6 +42,18 @@ final class Webhooks extends BaseAPI
      */
     public function create(array $req): array
     {
+        $this->validateResourceName('webhook', (string) ($req['name'] ?? ''));
+        if (strlen((string) $req['name']) > 42) {
+            throw new GoldskyException('goldsky: webhook name must be at most 42 characters');
+        }
+        $this->validateSubgraphTarget((string) ($req['subgraph_name'] ?? ''), (string) ($req['subgraph_version'] ?? ''));
+        if (trim((string) ($req['entity'] ?? '')) === '') {
+            throw new GoldskyException('goldsky: webhook entity is required');
+        }
+        $url = parse_url((string) ($req['webhook_url'] ?? ''));
+        if (!is_array($url) || !in_array($url['scheme'] ?? '', ['http', 'https'], true) || empty($url['host'])) {
+            throw new GoldskyException('goldsky: webhook URL must be an absolute HTTP(S) URL');
+        }
         if (isset($req['num_retries']) && ($req['num_retries'] < 0 || $req['num_retries'] > 10)) {
             throw new GoldskyException("num_retries must be between 0 and 10, got {$req['num_retries']}");
         }
@@ -62,6 +74,7 @@ final class Webhooks extends BaseAPI
      */
     public function delete(string $name): void
     {
+        $this->validateResourceName('webhook', $name);
         $this->requester->request('DELETE', ['subgraphs', 'webhooks', $name]);
     }
 }

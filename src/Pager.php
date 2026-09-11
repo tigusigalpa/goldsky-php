@@ -15,7 +15,6 @@ use Tigusigalpa\Goldsky\Exceptions\TransportException;
 final class Pager
 {
     private string $token = '';
-    private bool $first = true;
     private bool $done = false;
 
     /**
@@ -37,7 +36,7 @@ final class Pager
     public function nextPage(): Page
     {
         if ($this->done) {
-            return new self([]);
+            return new Page([]);
         }
         $query = $this->extraQuery;
         if ($this->pageSize > 0) {
@@ -47,11 +46,14 @@ final class Pager
             $query['page_token'] = $this->token;
         }
         $page = ($this->fetch)($query);
-        $this->token = $page->nextPageToken() ?? '';
+        $nextToken = $page->nextPageToken() ?? '';
+        if ($nextToken !== '' && $nextToken === $this->token) {
+            throw new \Tigusigalpa\Goldsky\Exceptions\GoldskyException('goldsky: pagination token did not advance');
+        }
+        $this->token = $nextToken;
         if ($this->token === '') {
             $this->done = true;
         }
-        $this->first = false;
         return $page;
     }
 

@@ -43,12 +43,17 @@ final class Page
      */
     public static function fromJSON(string $body): self
     {
-        if ($body === '') {
-            return new self([]);
+        try {
+            $trimmed = trim($body);
+            if ($trimmed === '' || $trimmed[0] !== '{') {
+                throw new \JsonException('expected a JSON object');
+            }
+            $decoded = json_decode($trimmed, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            throw new \Tigusigalpa\Goldsky\Exceptions\TransportException('decode page', 0, $e->getMessage(), $e);
         }
-        $decoded = json_decode($body, true);
         if (!is_array($decoded)) {
-            return new self([]);
+            throw new \Tigusigalpa\Goldsky\Exceptions\TransportException('decode page', 0, 'expected a JSON object');
         }
         $data = $decoded['data'] ?? [];
         $pagination = $decoded['pagination'] ?? [];

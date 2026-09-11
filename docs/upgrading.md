@@ -5,7 +5,23 @@ goldsky-php releases.
 
 ## Unreleased → 1.0.0
 
-Initial release. No upgrades needed.
+### Edge RPC authentication
+
+Edge RPC credentials are now sent in the documented
+`X-ERPC-Secret-Token` request header, not as a `key` query parameter. Calls
+made through `RPCClient` require no application-code changes, but any custom
+HTTP middleware must allow this header.
+
+### Stricter response handling
+
+Successful REST, GraphQL, and JSON-RPC responses must now contain valid JSON.
+Malformed, empty, oversized, or invalid JSON-RPC envelopes throw
+`TransportException` instead of being treated as empty successful results.
+
+### Data-only clients
+
+Use `Client::forData()` for public GraphQL and Edge RPC without a REST project
+token. REST and private GraphQL calls on this client fail locally.
 
 ## General principles
 
@@ -33,7 +49,8 @@ $config = (new Config())
     ->withBaseURL('https://api.goldsky.com/api/v1')
     ->withRetryMaxAttempts(3)
     ->withRetryMutations(false)
-    ->withTimeout(60.0);
+    ->withTimeout(60.0)
+    ->withMaxResponseBodyBytes(16 * 1024 * 1024);
 ```
 
 ### Laravel configuration
@@ -55,6 +72,7 @@ Environment variables:
 | `GOLDSKY_RETRY_MAX_ATTEMPTS` | `3` | Total attempts including the first |
 | `GOLDSKY_RETRY_MUTATIONS` | `false` | Retry non-idempotent mutations (unsafe) |
 | `GOLDSKY_TIMEOUT` | `60` | HTTP timeout in seconds |
+| `GOLDSKY_MAX_RESPONSE_BODY_BYTES` | `16777216` | Maximum buffered response size |
 
 ## Error handling changes
 

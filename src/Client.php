@@ -35,10 +35,10 @@ final class Client
     public readonly GraphQLClient $graphQL;
     public readonly RPCClient $rpc;
 
-    public function __construct(string $apiToken, ?Config $config = null, ?GuzzleClient $httpClient = null, ?LoggerInterface $logger = null, ?callable $sleeper = null)
+    public function __construct(string $apiToken, ?Config $config = null, ?GuzzleClient $httpClient = null, ?LoggerInterface $logger = null, ?callable $sleeper = null, bool $allowMissingApiToken = false)
     {
         $apiToken = trim($apiToken);
-        if ($apiToken === '') {
+        if ($apiToken === '' && !$allowMissingApiToken) {
             throw new GoldskyException('goldsky: API token is required');
         }
         $config = $config ?? new Config();
@@ -49,8 +49,18 @@ final class Client
         $this->webhooks = new Webhooks($this->requester);
         $this->edge = new Edge($this->requester);
         $this->catalogs = new Catalogs($this->requester);
-        $this->graphQL = new GraphQLClient($this->requester, $config->graphQLBaseURL, $config->edgeAPIKey);
+        $this->graphQL = new GraphQLClient($this->requester, $config->graphQLBaseURL);
         $this->rpc = new RPCClient($this->requester, $config->edgeBaseURL, $config->edgeAPIKey);
+    }
+
+    /**
+     * Creates a client for public GraphQL and Edge RPC calls without a REST
+     * project token. REST and private GraphQL operations fail locally until a
+     * token-backed Client is used.
+     */
+    public static function forData(?Config $config = null, ?GuzzleClient $httpClient = null, ?LoggerInterface $logger = null, ?callable $sleeper = null): self
+    {
+        return new self('', $config, $httpClient, $logger, $sleeper, true);
     }
 
     public function getRequester(): Requester
@@ -74,13 +84,12 @@ final class Client
     }
 
     /**
-     * Changes the Edge endpoint API key used by the RPC and GraphQL private
-     * helpers. The Edge key is a separate secret from the REST token.
+     * Changes the Edge endpoint API key used by RPC calls. The Edge key is a
+     * separate secret from the REST project token used by private GraphQL.
      */
     public function setEdgeAPIKey(string $key): void
     {
         $this->rpc->setEdgeAPIKey($key);
-        $this->graphQL->setEdgeAPIKey($key);
     }
 
     /**

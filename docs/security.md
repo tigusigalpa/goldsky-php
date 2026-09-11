@@ -16,8 +16,8 @@ responsibilities of the caller.
 ### Edge endpoint API key
 
 - A separate secret from the REST token.
-- Carried in the Edge RPC query string (`?key=<key>`).
-- Stored as a private field on `RPCClient` and `GraphQLClient`.
+- Sent in the Edge RPC `X-ERPC-Secret-Token` request header.
+- Stored as a private field on `RPCClient`; never placed in a URL.
 - Never included in exception messages or log output.
 - Obtain from `Edge::create()` (one-time) or `Edge::revealKey()`.
 
@@ -50,6 +50,15 @@ responsibilities of the caller.
   idempotency keys.
 - Opt-in mutation retry via `Config::withRetryMutations(true)` is unsafe and
   may cause duplicate resource creation.
+- Streaming multipart subgraph deployments are never retried because their
+  input streams cannot be replayed safely.
+
+## Response limits
+
+- REST, GraphQL, and Edge RPC responses are limited to 16 MiB by default.
+- Configure a different positive limit with
+  `Config::withMaxResponseBodyBytes(...)` only when the expected response size
+  is known and appropriate for the application.
 
 ## Reporting security issues
 

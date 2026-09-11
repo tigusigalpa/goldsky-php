@@ -12,6 +12,7 @@ use Tigusigalpa\Goldsky\Client;
 use Tigusigalpa\Goldsky\Config;
 use Tigusigalpa\Goldsky\Exceptions\GoldskyException;
 use Tigusigalpa\Goldsky\Exceptions\ProblemDetails;
+use Tigusigalpa\Goldsky\Exceptions\TransportException;
 use Tigusigalpa\Goldsky\Webhook\WebhookVerifier;
 use Tigusigalpa\Goldsky\Tests\TestCase;
 
@@ -44,13 +45,11 @@ final class EdgeCasesTest extends TestCase
 
     public function testUrlEncoding(): void
     {
-        [$client, $container] = $this->mockClientWithResponses([
-            new Response(200, [], '{"data":[],"pagination":{"next_page_token":null,"page_size":0}}'),
-        ]);
-        $client->subgraphs->get('my sub/graph');
-        $req = $this->lastRequest($container);
-        $this->assertStringContainsString('%20', $req['path']);
-        $this->assertStringNotContainsString(' ', $req['path']);
+        [$client, , ] = $this->mockClient([[200, '{}']]);
+        $url = $client->graphQL->publicURL('my project', 'sub/graph', 'v 1');
+        $this->assertStringContainsString('my%20project', $url);
+        $this->assertStringContainsString('sub%2Fgraph', $url);
+        $this->assertStringContainsString('v%201', $url);
     }
 
     public function testRetryAfter(): void
@@ -122,8 +121,19 @@ final class EdgeCasesTest extends TestCase
     public function testMalformedJson(): void
     {
         [$client, , ] = $this->mockClient([[200, '{not json']]);
-        $page = $client->pipelines->list();
-        $this->assertSame([], $page->data);
+        $this->expectException(TransportException::class);
+        $client->pipelines->list();
+    }
+
+    public function testPipelineStatePreservesRawJson(): void
+    {
+        [$client, ] = $this->mockClientWithResponses([
+            new Response(200, [], '["checkpoint", 42]'),
+        ]);
+
+        $state = $client->pipelines->state('my-pipe');
+
+        $this->assertSame(['checkpoint', 42], $state['data']);
     }
 
     public function testDeployRejectsOverwriteOne(): void
@@ -176,8 +186,9 @@ final class EdgeCasesTest extends TestCase
         $client->rpc->call(1, 'eth_blockNumber', null, $result);
         $this->assertSame('0x1234', $result);
         $uri = (string) $container[0]['request']->getUri();
-        $this->assertStringContainsString('key=edge-key', $uri);
         $this->assertStringContainsString('/evm/1', $uri);
+        $this->assertStringNotContainsString('edge-key', $uri);
+        $this->assertSame('edge-key', $container[0]['request']->getHeaderLine('X-ERPC-Secret-Token'));
     }
 
     public function testEdgeRpcBatch(): void
@@ -223,8 +234,8 @@ final class EdgeCasesTest extends TestCase
     {
         [$client, , ] = $this->mockClient([[200, '{}']], ['edge_api_key' => 'ek']);
         $url = $client->rpc->endpointURL(137);
-        $this->assertStringContainsString('/evm/137?', $url);
-        $this->assertStringContainsString('key=ek', $url);
+        $this->assertStringEndsWith('/evm/137', $url);
+        $this->assertStringNotContainsString('ek', $url);
     }
 
     public function testRetryAfterParsing(): void
@@ -238,5 +249,118 @@ final class EdgeCasesTest extends TestCase
 
         [$secs, $ok] = ProblemDetails::parseRetryAfter('-1');
         $this->assertFalse($ok);
+    }
+
+    public function testProblemWithoutStatusDoesNotPretendToBeSuccessful(): void
+    {
+        $problem = new ProblemDetails(type: 'about:blank', detail: 'upstream failure');
+
+        $this->assertStringNotContainsString('200', $problem->getMessage());
+    }
+
+    public function testPagerStopsAfterTerminalPage(): void
+    {
+        [$client, $container] = $this->mockClientWithResponses([
+            new Response(200, [], '{"data":[],"pagination":{"next_page_token":null,"page_size":50}}'),
+        ]);
+
+        $pager = $client->pipelines->newPager(['page_size' => 50]);
+        $pager->nextPage();
+        $empty = $pager->nextPage();
+
+        $this->assertSame([], $empty->data);
+        $this->assertTrue($pager->isDone());
+        $this->assertCount(1, $container);
+    }
+
+    public function testPagerRejectsRepeatingToken(): void
+    {
+        [$client, , ] = $this->mockClientWithResponses([
+            new Response(200, [], '{"data":[],"pagination":{"next_page_token":"tok","page_size":50}}'),
+        ]);
+
+        $pager = $client->pipelines->newPager(['page_token' => 'tok']);
+        $this->expectException(GoldskyException::class);
+        $pager->nextPage();
+    }
+
+    public function testResponseBodyLimit(): void
+    {
+        [$client, , ] = $this->mockClient([[200, '12345']], ['max_response_body_bytes' => 4]);
+        $this->expectException(TransportException::class);
+        $client->pipelines->list();
+    }
+
+    public function testInvalidResponseLimitIsRejectedAtConstruction(): void
+    {
+        $config = (new Config())->withMaxResponseBodyBytes(0);
+
+        $this->expectException(TransportException::class);
+        new Client('test-token', $config);
+    }
+
+    public function testStreamingDeploymentIsNotRetried(): void
+    {
+        [$client, , $container] = $this->mockClient([
+            [503, '{"type":"about:blank","title":"Unavailable","status":503}'],
+        ], ['retry_max_attempts' => 3, 'retry_mutations' => true]);
+        $bundle = fopen('php://memory', 'r+');
+        fwrite($bundle, 'zip');
+        rewind($bundle);
+
+        $this->expectException(ProblemDetails::class);
+        try {
+            $client->subgraphs->deploy('subgraph', 'v1', [
+                'bundle' => $bundle,
+                'bundle_filename' => 'build.zip',
+            ]);
+        } finally {
+            $this->assertCount(1, $container);
+            fclose($bundle);
+        }
+    }
+
+    public function testRpcRejectsMalformedEnvelope(): void
+    {
+        [$client, ] = $this->mockClientWithResponses([
+            new Response(200, ['Content-Type' => 'application/json'], '{"jsonrpc":"2.0","id":1}'),
+        ], ['edge_api_key' => 'edge-key']);
+
+        $this->expectException(TransportException::class);
+        $client->rpc->call(1, 'eth_blockNumber');
+    }
+
+    public function testRpcBatchRejectsObjectEnvelope(): void
+    {
+        [$client, ] = $this->mockClientWithResponses([
+            new Response(200, ['Content-Type' => 'application/json'], '{}'),
+        ], ['edge_api_key' => 'edge-key']);
+        $calls = [['method' => 'eth_blockNumber']];
+
+        $this->expectException(TransportException::class);
+        $client->rpc->batch(1, $calls);
+    }
+
+    public function testDataClientAllowsPublicGraphQLWithoutRestToken(): void
+    {
+        $mock = new MockHandler([
+            new Response(200, ['Content-Type' => 'application/json'], '{"data":{"ok":true}}'),
+        ]);
+        $httpClient = new \GuzzleHttp\Client(['handler' => HandlerStack::create($mock), 'http_errors' => false]);
+        $client = Client::forData(new Config(), $httpClient);
+
+        $response = $client->graphQL->queryPublic('project', 'subgraph', 'v1', ['query' => '{ ok }']);
+
+        $this->assertTrue($response['data']['ok']);
+    }
+
+    public function testDataClientRejectsRestBeforeSendingRequest(): void
+    {
+        $mock = new MockHandler();
+        $httpClient = new \GuzzleHttp\Client(['handler' => HandlerStack::create($mock), 'http_errors' => false]);
+        $client = Client::forData(new Config(), $httpClient);
+
+        $this->expectException(TransportException::class);
+        $client->pipelines->list();
     }
 }

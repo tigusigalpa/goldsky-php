@@ -14,6 +14,7 @@ final class Config
     public const DEFAULT_USER_AGENT = 'goldsky-php/1.0.0';
     public const DEFAULT_EDGE_BASE_URL = 'https://edge.goldsky.com/standard/evm';
     public const DEFAULT_GRAPHQL_BASE_URL = 'https://api.goldsky.com/api';
+    public const DEFAULT_MAX_RESPONSE_BODY_BYTES = 16 * 1024 * 1024;
 
     public string $baseURL = self::DEFAULT_BASE_URL;
     public string $userAgent = self::DEFAULT_USER_AGENT;
@@ -26,6 +27,7 @@ final class Config
     public bool $retryMutations = false;
     public float $timeoutSec = 60.0;
     public bool $verifyTls = true;
+    public int $maxResponseBodyBytes = self::DEFAULT_MAX_RESPONSE_BODY_BYTES;
 
     public function withBaseURL(string $url): self
     {
@@ -59,7 +61,7 @@ final class Config
 
     public function withRetryMaxAttempts(int $n): self
     {
-        $this->retryMaxAttempts = max(1, $n);
+        $this->retryMaxAttempts = $n;
         return $this;
     }
 
@@ -78,6 +80,16 @@ final class Config
     public function withVerifyTls(bool $v): self
     {
         $this->verifyTls = $v;
+        return $this;
+    }
+
+    /**
+     * Limits the amount of REST, GraphQL, and JSON-RPC response data buffered
+     * in memory. The default is 16 MiB.
+     */
+    public function withMaxResponseBodyBytes(int $bytes): self
+    {
+        $this->maxResponseBodyBytes = $bytes;
         return $this;
     }
 }

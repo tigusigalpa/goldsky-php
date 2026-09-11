@@ -47,6 +47,7 @@ final class Pipelines extends BaseAPI
      */
     public function newPager(array $opts = []): Pager
     {
+        $this->validatePageSize($opts['page_size'] ?? 0);
         $extra = [];
         if (!empty($opts['type'])) {
             $extra['type'] = $opts['type'];
@@ -70,8 +71,12 @@ final class Pipelines extends BaseAPI
      */
     public function create(array $req): array
     {
-        if (!empty($req['name'])) {
-            $this->validatePipelineName($req['name']);
+        $name = $req['name'] ?? '';
+        if ($name === '' && isset($req['definition']) && is_array($req['definition'])) {
+            $name = $req['definition']['name'] ?? '';
+        }
+        if ($name !== '') {
+            $this->validatePipelineName((string) $name);
         }
         [, $body] = $this->requester->request('POST', ['pipelines'], [], $req);
         return $this->decode($body);
@@ -113,9 +118,6 @@ final class Pipelines extends BaseAPI
      */
     public function validate(array $req): array
     {
-        if (!empty($req['name'])) {
-            $this->validatePipelineName($req['name']);
-        }
         [, $body] = $this->requester->request('POST', ['pipelines', 'validate'], [], $req);
         return $this->decode($body);
     }
@@ -255,15 +257,11 @@ final class Pipelines extends BaseAPI
     {
         $this->validatePipelineName($name);
         [, $body] = $this->requester->request('GET', ['pipelines', $name, 'state']);
-        $decoded = $this->decode($body);
+        $decoded = $this->decodeValue($body);
         // The state body may not be wrapped in {data:...}; fall back to raw.
-        if (isset($decoded['data'])) {
+        if (is_array($decoded) && array_key_exists('data', $decoded)) {
             return $decoded;
         }
-        if ($body !== '' && $decoded === []) {
-            $raw = json_decode($body, true);
-            return is_array($raw) ? ['data' => $raw] : ['data' => $body];
-        }
-        return $decoded;
+        return ['data' => $decoded];
     }
 }
